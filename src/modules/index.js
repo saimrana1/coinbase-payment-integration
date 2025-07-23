@@ -5,7 +5,6 @@ const router = express.Router();
 
 router.post("/create-payment", controller.createPayment);
 router.post("/webhook",[verifyCoinbaseSignature], controller.webhookHandler);
-router.get("/payment-status/:id", controller.getPayment);
-router.get("/status/:chargeId", controller.getPaymentStatus);
+router.get("/payment-status/:chargeId", controller.getPaymentStatus);
 
 module.exports=router

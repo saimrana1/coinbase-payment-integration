@@ -16,7 +16,6 @@ exports.createPayment = async (req, res) => {
       chargeId: response.data.data.id,
       amount,
       currency,
-      status: response.data.data.timeline[0]?.status,
     });
     console.log("payment", payment);
 
@@ -36,35 +35,9 @@ exports.createPayment = async (req, res) => {
   }
 };
 
-exports.webhookHandler = async (req, res) => {
+exports.getPaymentStatus = async (req, res) => {
   try {
-    const event = req.body;
-    const chargeId = event?.data?.id;
-    const status = event?.type;
-
-    console.log("Webhook event received:", status, "for charge:", chargeId);
-
-    if (chargeId) {
-      await Payment.findOneAndUpdate({ chargeId }, { status }, { new: true });
-    }
-
-    return res.status(200).json({
-      message: "Webhook processed successfully",
-      data: { chargeId, status },
-    });
-  } catch (error) {
-    console.error("Webhook processing failed:", error.message);
-    return res.status(500).json({
-      message: "Failed to process webhook",
-      error: error.message,
-    });
-  }
-};
-
-exports.getPayment = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const payment = await Payment.findOne({ chargeId: id });
+    const payment = await Payment.findOne({ chargeId: req.params.chargeId });
 
     if (!payment) {
       return res.status(404).json({
@@ -85,30 +58,49 @@ exports.getPayment = async (req, res) => {
   }
 };
 
-exports.getPaymentStatus = async (req, res) => {
+exports.webhookHandler = async (req, res) => {
   try {
-    const { chargeId } = req.params;
+    const event = req.body;
+    const chargeId = event?.event?.data?.id;
+    let status;
 
-    const response = await coinbase.get(`/charges/${chargeId}`);
-    console.log("response", response);
+    switch (event?.event?.type) {
+      case "charge:created":
+        status = "PENDING";
+        break;
+      case "charge:confirmed":
+        status = "PAID";
+        break;
+      case "charge:failed":
+        status = "FAILED";
+        break;
+      default:
+        status = "unknown";
+    }
 
-    const timeline = response.data.data.timeline;
-    console.log("timeline", timeline);
-    const status = timeline[timeline.length - 1].status;
-    console.log("status", status);
+    console.log("Webhook event received:", {
+      eventType: event.event.type,
+      chargeId,
+      fullEvent: event,
+    });
+
+    const updatedPayment = await Payment.findOneAndUpdate(
+      { chargeId },
+      { $set: { status } },
+      { new: true }
+    );
+    if (!updatedPayment) {
+      console.warn(`Payment not found for chargeId: ${chargeId}`);
+    }
 
     return res.status(200).json({
-      message: "Payment status fetched successfully",
-      data: {
-        chargeId,
-        status,
-        hosted_url: response.data.data.hosted_url,
-      },
+      message: "Webhook processed successfully",
+      data: updatedPayment,
     });
   } catch (error) {
     console.log(error);
     return res.status(500).json({
-      message: "Error fetching payment status",
+      message: "Failed to process webhook",
       error: error.message,
     });
   }
